@@ -102,11 +102,11 @@ class profiling_helper {
 
         //time mean square error
         for (int i = 1; i < iter; i++) {
-#if (__LIBSYCL_MAJOR_VERSION >= 7) && (__LIBSYCL_MINOR_VERSION >= 1)
-            stat.variance += sycl::pow(time[i] - stat.mean, 2);
-#else
+//#if (__LIBSYCL_MAJOR_VERSION >= 7) && (__LIBSYCL_MINOR_VERSION >= 1)
+            //stat.variance += sycl::pow(time[i] - stat.mean, 2);
+//#else
             stat.variance += pow(time[i] - stat.mean, 2);
-#endif
+//#endif
         }
         stat.variance /= iter;
     }
@@ -283,5 +283,10 @@ public:
                         "[Wall time]", "CPU");
             }
         }
+    }
+
+    float get_min_cpu_time() {
+        get_statistics(cpu_time_vec[0], cpu_statistics);
+        return cpu_statistics.min;
     }
 };
