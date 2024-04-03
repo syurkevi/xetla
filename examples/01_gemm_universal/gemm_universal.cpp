@@ -547,7 +547,7 @@ void benchmark_xetla_vs_onednn(sycl::queue &queue, sycl::context &context, sycl:
             check_correctness, cold_weights_cache,
             min_xetla_time);
     long ops = 2 * static_cast<long>(matrix_m) * matrix_n * matrix_k;
-    long bytes = static_cast<long>(matrix_m) * matrix_k + matrix_k * matrix_n + matrix_m * matrix_n * sizeof(data_type_a);
+    long bytes = (static_cast<long>(matrix_m) * matrix_k + matrix_k * matrix_n + matrix_m * matrix_n) * sizeof(data_type_a);
     max_xetla_gflops = (double)ops / min_xetla_time / 1000000;
     max_xetla_bw = (double)bytes / 1000000 / min_xetla_time ;
     perf_xetla[mnk] = {min_xetla_time, max_xetla_gflops, max_xetla_bw};
@@ -587,6 +587,7 @@ int main() {
     std::map<keyMNK, time_flops_bw> perf_xetla;
     std::map<keyMNK, time_flops_bw> perf_onednn;
 
+    /*
     benchmark_xetla_vs_onednn(queue, context, device, {4, 12288, 4096}, perf_xetla, perf_onednn);
     benchmark_xetla_vs_onednn(queue, context, device, {4, 4096, 4096} , perf_xetla, perf_onednn);
     benchmark_xetla_vs_onednn(queue, context, device, {4, 16384, 4096}, perf_xetla, perf_onednn);
@@ -603,6 +604,25 @@ int main() {
     benchmark_xetla_vs_onednn(queue, context, device, {4, 16384, 4096}, perf_xetla, perf_onednn);
     benchmark_xetla_vs_onednn(queue, context, device, {4, 50272, 4096}, perf_xetla, perf_onednn);
     benchmark_xetla_vs_onednn(queue, context, device, {4, 250880, 4096}, perf_xetla, perf_onednn);
+    */
+
+    //M N K
+    benchmark_xetla_vs_onednn(queue, context, device, {4, 12288, 4096}, perf_xetla, perf_onednn);
+    benchmark_xetla_vs_onednn(queue, context, device, {4, 4096,  4096}, perf_xetla, perf_onednn);
+    benchmark_xetla_vs_onednn(queue, context, device, {4, 16384, 4096}, perf_xetla, perf_onednn);
+    benchmark_xetla_vs_onednn(queue, context, device, {4, 4096, 16384}, perf_xetla, perf_onednn);
+    benchmark_xetla_vs_onednn(queue, context, device, {4, 50400, 4096}, perf_xetla, perf_onednn);
+
+    //benchmark_xetla_vs_onednn(queue, context, device, {4, 15360, 5120}, perf_xetla, perf_onednn);
+    //benchmark_xetla_vs_onednn(queue, context, device, {4, 5120,  5120}, perf_xetla, perf_onednn);
+    //benchmark_xetla_vs_onednn(queue, context, device, {4, 13824, 5120}, perf_xetla, perf_onednn);
+    //benchmark_xetla_vs_onednn(queue, context, device, {4, 5120, 13824}, perf_xetla, perf_onednn);
+    //benchmark_xetla_vs_onednn(queue, context, device, {4, 32000, 5120}, perf_xetla, perf_onednn);
+
+    //mm_common
+    //benchmark_xetla_vs_onednn(queue, context, device, {4, 4096, 4096}, perf_xetla, perf_onednn);
+    //benchmark_xetla_vs_onednn(queue, context, device, {4, 5120, 5120}, perf_xetla, perf_onednn);
+    //benchmark_xetla_vs_onednn(queue, context, device, {4, 7168, 3584}, perf_xetla, perf_onednn);
 
     std::cout << "[M x N x K], xetla_min_time(ms), xetla_max_GFLOPS, xetla_max_BW(GB/s), onednn_min_time(ms), onednn_max_GFLOPS, onednn_max_BW(GB/s) onednn/xetla(%)" << std::endl;
     for(auto &kv : perf_xetla) {
@@ -611,7 +631,7 @@ int main() {
                      std::get<2>(kv.first) << "], ";
         std::cout << std::get<0>(kv.second) << ", " << std::get<1>(kv.second) << ", " << std::get<2>(kv.second)  << ", ";
         std::cout << std::get<0>(perf_onednn[kv.first])<< ", " << std::get<1>(perf_onednn[kv.first]) << ", " << std::get<2>(perf_onednn[kv.first]) << ", ";
-        std::cout << std::get<0>(perf_onednn[kv.first]) / std::get<0>(kv.second) * 100.f <<  "%" << std::endl;
+        std::cout << std::get<0>(kv.second) / std::get<0>(perf_onednn[kv.first]) * 100.f <<  "%" << std::endl;
     }
 
     return (0);
