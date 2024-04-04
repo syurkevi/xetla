@@ -230,10 +230,12 @@ void gemm_universal_run_prealloc(uint32_t iter,
                                  DT* A, DT* B, DT* C,
                                  size_t matrix_m, size_t matrix_n, size_t matrix_k,
                                  bool check_correctness, bool cold_weights_cache,
-                                 float &min_runtime) {
+                                 float &min_runtime, bool verbose=true) {
 
-    printf("===============================================\n");
-    printf("benchmarking xetla(IPEX) mxk X kxn: (%zux%zu) x (%zux%zu)\n", matrix_m, matrix_k, matrix_k, matrix_n);
+    if(verbose) {
+        printf("===============================================\n");
+        printf("benchmarking xetla(IPEX) mxk X kxn: (%zux%zu) x (%zux%zu)\n", matrix_m, matrix_k, matrix_k, matrix_n);
+    }
 
     using data_type_a = DT;
     using data_type_b = DT;
@@ -301,10 +303,12 @@ void gemm_universal_run_prealloc(uint32_t iter,
             queue, device, context);
 
     if constexpr (kslicing_type != kslicing_impl_t::none) {
-        std::cout << "gemm_universal with "
-                  << (kslicing_type == kslicing_impl_t::global ? "global"
-                                                               : "local")
-                  << " cooperation" << std::endl;
+        if(verbose) {
+            std::cout << "gemm_universal with "
+                      << (kslicing_type == kslicing_impl_t::global ? "global"
+                                                                   : "local")
+                      << " cooperation" << std::endl;
+        }
     }
 
     // set up gemm_universal arguments
@@ -378,8 +382,10 @@ void gemm_universal_run_prealloc(uint32_t iter,
     //prof.print_profiling_result(profiling_selector::CPU);
 
     min_runtime = prof.get_min_cpu_time();
-    printf("min time %f (ms)\n", prof.get_min_cpu_time());
-    printf("-----------------------------------------------\n");
+    if(verbose){
+        printf("min time %f (ms)\n", prof.get_min_cpu_time());
+        printf("-----------------------------------------------\n");
+    }
 }
 
 template <typename DT, typename ACCT=float>
@@ -390,7 +396,7 @@ void gemm_onednn_run_prealloc(uint32_t iter,
                               DT* A, DT* B, DT* C,
                               size_t matrix_m, size_t matrix_n, size_t matrix_k,
                               bool check_correctness, bool cold_weights_cache,
-                              float &min_runtime) {
+                              float &min_runtime, bool verbose=true) {
 
     //// DNNL Matmul
     // Create execution dnnl::engine
@@ -446,8 +452,10 @@ void gemm_onednn_run_prealloc(uint32_t iter,
     matmul_args.insert({DNNL_ARG_DST, c_mem});
 
 
-    printf("===============================================\n");
-    printf("ONEDNN benchmarking mxk X kxn: (%zux%zu) x (%zux%zu)\n", matrix_m, matrix_k, matrix_k, matrix_n);
+    if(verbose) {
+        printf("===============================================\n");
+        printf("ONEDNN benchmarking mxk X kxn: (%zux%zu) x (%zux%zu)\n", matrix_m, matrix_k, matrix_k, matrix_n);
+    }
 
     using data_type_a = DT;
     using data_type_b = DT;
@@ -510,8 +518,10 @@ void gemm_onednn_run_prealloc(uint32_t iter,
     //prof.print_profiling_result(profiling_selector::CPU);
 
     min_runtime = prof.get_min_cpu_time();
-    printf("min time %f (ms)\n", prof.get_min_cpu_time());
-    printf("-----------------------------------------------\n");
+    if(verbose) {
+        printf("min time %f (ms)\n", prof.get_min_cpu_time());
+        printf("-----------------------------------------------\n");
+    }
 }
 
 
@@ -519,7 +529,8 @@ void gemm_onednn_run_prealloc(uint32_t iter,
 void benchmark_xetla_vs_onednn(sycl::queue &queue, sycl::context &context, sycl::device &device,
                keyMNK mnk,
                std::map<keyMNK, time_flops_bw> &perf_xetla,
-               std::map<keyMNK, time_flops_bw> &perf_onednn) {
+               std::map<keyMNK, time_flops_bw> &perf_onednn,
+               bool verbose=true) {
 
     size_t matrix_m = std::get<0>(mnk);
     size_t matrix_n = std::get<1>(mnk);
@@ -535,7 +546,7 @@ void benchmark_xetla_vs_onednn(sycl::queue &queue, sycl::context &context, sycl:
     data_type_b* d_B = fill_device_ptr<data_type_a>(queue, context, device, matrix_k * matrix_n);
     data_type_c* d_C = fill_device_ptr<data_type_a>(queue, context, device, matrix_m * matrix_n);
 
-    const int iter = 30;
+    const int iter = 50;
     const bool check_correctness = false;
     const bool cold_weights_cache = false;
     float min_xetla_time, max_xetla_gflops, max_xetla_bw;
@@ -545,13 +556,15 @@ void benchmark_xetla_vs_onednn(sycl::queue &queue, sycl::context &context, sycl:
             d_A, d_B, d_C,
             matrix_m, matrix_n, matrix_k,
             check_correctness, cold_weights_cache,
-            min_xetla_time);
+            min_xetla_time, verbose);
     long ops = 2 * static_cast<long>(matrix_m) * matrix_n * matrix_k;
     long bytes = (static_cast<long>(matrix_m) * matrix_k + matrix_k * matrix_n + matrix_m * matrix_n) * sizeof(data_type_a);
     max_xetla_gflops = (double)ops / min_xetla_time / 1000000;
     max_xetla_bw = (double)bytes / 1000000 / min_xetla_time ;
     perf_xetla[mnk] = {min_xetla_time, max_xetla_gflops, max_xetla_bw};
-    printf("GFlops %f GB/s %f \n", max_xetla_gflops, max_xetla_bw);
+    if(verbose) {
+        printf("GFlops %f GB/s %f \n", max_xetla_gflops, max_xetla_bw);
+    }
 
     float min_onednn_time, max_onednn_gflops, max_onednn_bw;
     gemm_onednn_run_prealloc<data_type_a>(
@@ -560,17 +573,34 @@ void benchmark_xetla_vs_onednn(sycl::queue &queue, sycl::context &context, sycl:
             d_A, d_B, d_C,
             matrix_m, matrix_n, matrix_k,
             check_correctness, cold_weights_cache,
-            min_onednn_time);
+            min_onednn_time, verbose);
     max_onednn_gflops = (double)ops / min_onednn_time / 1000000;
     max_onednn_bw = (double)bytes / 1000000 / min_onednn_time ;
     perf_onednn[mnk] = {min_onednn_time, max_onednn_gflops, max_onednn_bw};
-    printf("GFlops %f GB/s %f \n", max_onednn_gflops, max_onednn_bw);
+    if(verbose) {
+        printf("GFlops %f GB/s %f \n", max_onednn_gflops, max_onednn_bw);
+        printf("\n");
+    }
 
 
-    printf("\n");
     free(d_A, context);
     free(d_B, context);
     free(d_C, context);
+}
+
+void print_onednn_xetla_table(std::map<keyMNK, time_flops_bw> &perf_xetla,
+                              std::map<keyMNK, time_flops_bw> &perf_onednn) {
+
+    std::cout << "[M x N x K], xetla_min_time(ms), xetla_max_GFLOPS, xetla_max_BW(GB/s), onednn_min_time(ms), onednn_max_GFLOPS, onednn_max_BW(GB/s), onednn/xetla(%)" << std::endl;
+    for(auto &kv : perf_xetla) {
+        auto mnk = kv.first;
+        std::cout << "[" << std::get<0>(mnk) << "x" <<
+                     std::get<1>(mnk) << "x" <<
+                     std::get<2>(mnk) << "], ";
+        std::cout << std::get<0>(kv.second) << ", " << std::get<1>(kv.second) << ", " << std::get<2>(kv.second)  << ", ";
+        std::cout << std::get<0>(perf_onednn[mnk])<< ", " << std::get<1>(perf_onednn[mnk]) << ", " << std::get<2>(perf_onednn[mnk]) << ", ";
+        std::cout << std::get<0>(kv.second) / std::get<0>(perf_onednn[mnk]) * 100.f <<  "%" << std::endl;
+    }
 }
 
 int main() {
@@ -604,7 +634,6 @@ int main() {
     benchmark_xetla_vs_onednn(queue, context, device, {4, 16384, 4096}, perf_xetla, perf_onednn);
     benchmark_xetla_vs_onednn(queue, context, device, {4, 50272, 4096}, perf_xetla, perf_onednn);
     benchmark_xetla_vs_onednn(queue, context, device, {4, 250880, 4096}, perf_xetla, perf_onednn);
-    */
 
     //M N K
     benchmark_xetla_vs_onednn(queue, context, device, {4, 12288, 4096}, perf_xetla, perf_onednn);
@@ -612,6 +641,7 @@ int main() {
     benchmark_xetla_vs_onednn(queue, context, device, {4, 16384, 4096}, perf_xetla, perf_onednn);
     benchmark_xetla_vs_onednn(queue, context, device, {4, 4096, 16384}, perf_xetla, perf_onednn);
     benchmark_xetla_vs_onednn(queue, context, device, {4, 50400, 4096}, perf_xetla, perf_onednn);
+    */
 
     //benchmark_xetla_vs_onednn(queue, context, device, {4, 15360, 5120}, perf_xetla, perf_onednn);
     //benchmark_xetla_vs_onednn(queue, context, device, {4, 5120,  5120}, perf_xetla, perf_onednn);
@@ -619,20 +649,157 @@ int main() {
     //benchmark_xetla_vs_onednn(queue, context, device, {4, 5120, 13824}, perf_xetla, perf_onednn);
     //benchmark_xetla_vs_onednn(queue, context, device, {4, 32000, 5120}, perf_xetla, perf_onednn);
 
-    //mm_common
-    //benchmark_xetla_vs_onednn(queue, context, device, {4, 4096, 4096}, perf_xetla, perf_onednn);
-    //benchmark_xetla_vs_onednn(queue, context, device, {4, 5120, 5120}, perf_xetla, perf_onednn);
-    //benchmark_xetla_vs_onednn(queue, context, device, {4, 7168, 3584}, perf_xetla, perf_onednn);
+    const bool verbose = false;
 
-    std::cout << "[M x N x K], xetla_min_time(ms), xetla_max_GFLOPS, xetla_max_BW(GB/s), onednn_min_time(ms), onednn_max_GFLOPS, onednn_max_BW(GB/s) onednn/xetla(%)" << std::endl;
-    for(auto &kv : perf_xetla) {
-        std::cout << "[" << std::get<0>(kv.first) << "x" <<
-                     std::get<1>(kv.first) << "x" <<
-                     std::get<2>(kv.first) << "], ";
-        std::cout << std::get<0>(kv.second) << ", " << std::get<1>(kv.second) << ", " << std::get<2>(kv.second)  << ", ";
-        std::cout << std::get<0>(perf_onednn[kv.first])<< ", " << std::get<1>(perf_onednn[kv.first]) << ", " << std::get<2>(perf_onednn[kv.first]) << ", ";
-        std::cout << std::get<0>(kv.second) / std::get<0>(perf_onednn[kv.first]) * 100.f <<  "%" << std::endl;
-    }
+    /*
+     * Tests for multi-device partitioning scaling
+     */
+
+    /// gpt-j-6b
+    printf("****\n");
+    printf("qkv_mm_fuse GPT-J-6b N scaling\n");
+    benchmark_xetla_vs_onednn(queue, context, device, {4, 12288  , 4096}, perf_xetla, perf_onednn, verbose);
+    benchmark_xetla_vs_onednn(queue, context, device, {4, 12288/2, 4096}, perf_xetla, perf_onednn, verbose);
+    benchmark_xetla_vs_onednn(queue, context, device, {4, 12288/4, 4096}, perf_xetla, perf_onednn, verbose);
+    printf("\n*************\n");
+    print_onednn_xetla_table(perf_xetla, perf_onednn);
+    perf_xetla.clear(); perf_onednn.clear();
+
+    printf("****\n");
+    printf("mm_common GPT-J-6b N scaling\n");
+    benchmark_xetla_vs_onednn(queue, context, device, {4, 4096,   4096}, perf_xetla, perf_onednn, verbose);
+    benchmark_xetla_vs_onednn(queue, context, device, {4, 4096/2, 4096}, perf_xetla, perf_onednn, verbose);
+    benchmark_xetla_vs_onednn(queue, context, device, {4, 4096/4, 4096}, perf_xetla, perf_onednn, verbose);
+    printf("\n*************\n");
+    print_onednn_xetla_table(perf_xetla, perf_onednn);
+    perf_xetla.clear(); perf_onednn.clear();
+
+    printf("****\n");
+    printf("mm_bias_gelu GPT-J-6b N scaling\n");
+    benchmark_xetla_vs_onednn(queue, context, device, {4, 16384,   4096}, perf_xetla, perf_onednn, verbose);
+    benchmark_xetla_vs_onednn(queue, context, device, {4, 16384/2, 4096}, perf_xetla, perf_onednn, verbose);
+    benchmark_xetla_vs_onednn(queue, context, device, {4, 16384/4, 4096}, perf_xetla, perf_onednn, verbose);
+    printf("\n*************\n");
+    print_onednn_xetla_table(perf_xetla, perf_onednn);
+    perf_xetla.clear(); perf_onednn.clear();
+
+    printf("****\n");
+    printf("mm_bias_res_res GPT-J-6b K scaling\n");
+    benchmark_xetla_vs_onednn(queue, context, device, {4, 4096, 16384},   perf_xetla, perf_onednn, verbose);
+    benchmark_xetla_vs_onednn(queue, context, device, {4, 4096, 16384/2}, perf_xetla, perf_onednn, verbose);
+    benchmark_xetla_vs_onednn(queue, context, device, {4, 4096, 16384/4}, perf_xetla, perf_onednn, verbose);
+    printf("\n*************\n");
+    print_onednn_xetla_table(perf_xetla, perf_onednn);
+    perf_xetla.clear(); perf_onednn.clear();
+
+    printf("****\n");
+    printf("lmhead_mm GPT-J-6b N scaling\n");
+    benchmark_xetla_vs_onednn(queue, context, device, {4, 50400,   4096}, perf_xetla, perf_onednn, verbose);
+    benchmark_xetla_vs_onednn(queue, context, device, {4, 50400/2, 4096}, perf_xetla, perf_onednn, verbose);
+    benchmark_xetla_vs_onednn(queue, context, device, {4, 50400/4, 4096}, perf_xetla, perf_onednn, verbose);
+    printf("\n*************\n");
+    print_onednn_xetla_table(perf_xetla, perf_onednn);
+    perf_xetla.clear(); perf_onednn.clear();
+    printf("\n\n\n\n");
+    /// /gpt-j-6b
+
+
+    /// llama2-13b
+    printf("****\n");
+    printf("qkv_mm_fuse LLama2-13b N scaling\n");
+    benchmark_xetla_vs_onednn(queue, context, device, {4, 15360  , 5120}, perf_xetla, perf_onednn, verbose);
+    benchmark_xetla_vs_onednn(queue, context, device, {4, 15360/2, 5120}, perf_xetla, perf_onednn, verbose);
+    benchmark_xetla_vs_onednn(queue, context, device, {4, 15360/4, 5120}, perf_xetla, perf_onednn, verbose);
+    printf("\n*************\n");
+    print_onednn_xetla_table(perf_xetla, perf_onednn);
+    perf_xetla.clear(); perf_onednn.clear();
+
+    printf("****\n");
+    printf("mm_common LLama2-13b N scaling\n");
+    benchmark_xetla_vs_onednn(queue, context, device, {4, 5120,   5120}, perf_xetla, perf_onednn, verbose);
+    benchmark_xetla_vs_onednn(queue, context, device, {4, 5120/2, 5120}, perf_xetla, perf_onednn, verbose);
+    benchmark_xetla_vs_onednn(queue, context, device, {4, 5120/4, 5120}, perf_xetla, perf_onednn, verbose);
+    printf("\n*************\n");
+    print_onednn_xetla_table(perf_xetla, perf_onednn);
+    perf_xetla.clear(); perf_onednn.clear();
+
+    printf("****\n");
+    printf("mm_silu/resmul LLama2-13b N scaling\n");
+    benchmark_xetla_vs_onednn(queue, context, device, {4, 13824,   5120}, perf_xetla, perf_onednn, verbose);
+    benchmark_xetla_vs_onednn(queue, context, device, {4, 13824/2, 5120}, perf_xetla, perf_onednn, verbose);
+    benchmark_xetla_vs_onednn(queue, context, device, {4, 13824/4, 5120}, perf_xetla, perf_onednn, verbose);
+    printf("\n*************\n");
+    print_onednn_xetla_table(perf_xetla, perf_onednn);
+    perf_xetla.clear(); perf_onednn.clear();
+
+    printf("****\n");
+    printf("mm_res LLama2-13b K scaling\n");
+    benchmark_xetla_vs_onednn(queue, context, device, {4, 5120, 16384},   perf_xetla, perf_onednn, verbose);
+    benchmark_xetla_vs_onednn(queue, context, device, {4, 5120, 16384/2}, perf_xetla, perf_onednn, verbose);
+    benchmark_xetla_vs_onednn(queue, context, device, {4, 5120, 16384/4}, perf_xetla, perf_onednn, verbose);
+    printf("\n*************\n");
+    print_onednn_xetla_table(perf_xetla, perf_onednn);
+    perf_xetla.clear(); perf_onednn.clear();
+
+    printf("****\n");
+    printf("lmhead_mm LLama2-13b N scaling\n");
+    benchmark_xetla_vs_onednn(queue, context, device, {4, 32000,   5120}, perf_xetla, perf_onednn, verbose);
+    benchmark_xetla_vs_onednn(queue, context, device, {4, 32000/2, 5120}, perf_xetla, perf_onednn, verbose);
+    benchmark_xetla_vs_onednn(queue, context, device, {4, 32000/4, 5120}, perf_xetla, perf_onednn, verbose);
+    printf("\n*************\n");
+    print_onednn_xetla_table(perf_xetla, perf_onednn);
+    perf_xetla.clear(); perf_onednn.clear();
+    printf("\n\n\n\n");
+    /// /llama2-13b
+
+
+    /// bloom-176b
+    printf("****\n");
+    printf("qkv_mm_fuse bloom-176b N scaling\n");
+    benchmark_xetla_vs_onednn(queue, context, device, {4, 10752  , 7168}, perf_xetla, perf_onednn, verbose);
+    benchmark_xetla_vs_onednn(queue, context, device, {4, 10752/2, 7168}, perf_xetla, perf_onednn, verbose);
+    benchmark_xetla_vs_onednn(queue, context, device, {4, 10752/4, 7168}, perf_xetla, perf_onednn, verbose);
+    printf("\n*************\n");
+    print_onednn_xetla_table(perf_xetla, perf_onednn);
+    perf_xetla.clear(); perf_onednn.clear();
+
+    printf("****\n");
+    printf("mm_common bloom-176b N scaling\n");
+    benchmark_xetla_vs_onednn(queue, context, device, {4, 7168,   3584}, perf_xetla, perf_onednn, verbose);
+    benchmark_xetla_vs_onednn(queue, context, device, {4, 7168/2, 3584}, perf_xetla, perf_onednn, verbose);
+    benchmark_xetla_vs_onednn(queue, context, device, {4, 7168/4, 3584}, perf_xetla, perf_onednn, verbose);
+    printf("\n*************\n");
+    print_onednn_xetla_table(perf_xetla, perf_onednn);
+    perf_xetla.clear(); perf_onednn.clear();
+
+    printf("****\n");
+    printf("mm_bias_relu bloom-176b N scaling\n");
+    benchmark_xetla_vs_onednn(queue, context, device, {4, 14336,   7168}, perf_xetla, perf_onednn, verbose);
+    benchmark_xetla_vs_onednn(queue, context, device, {4, 14336/2, 7168}, perf_xetla, perf_onednn, verbose);
+    benchmark_xetla_vs_onednn(queue, context, device, {4, 14336/4, 7168}, perf_xetla, perf_onednn, verbose);
+    printf("\n*************\n");
+    print_onednn_xetla_table(perf_xetla, perf_onednn);
+    perf_xetla.clear(); perf_onednn.clear();
+
+    printf("****\n");
+    printf("mm_bias_res bloom-176b K scaling\n");
+    benchmark_xetla_vs_onednn(queue, context, device, {4, 7168, 14336},   perf_xetla, perf_onednn, verbose);
+    benchmark_xetla_vs_onednn(queue, context, device, {4, 7168, 14336/2}, perf_xetla, perf_onednn, verbose);
+    benchmark_xetla_vs_onednn(queue, context, device, {4, 7168, 14336/4}, perf_xetla, perf_onednn, verbose);
+    printf("\n*************\n");
+    print_onednn_xetla_table(perf_xetla, perf_onednn);
+    perf_xetla.clear(); perf_onednn.clear();
+
+    printf("****\n");
+    printf("lmhead_mm bloom-176b N scaling\n");
+    benchmark_xetla_vs_onednn(queue, context, device, {4, 50272,   2048}, perf_xetla, perf_onednn, verbose);
+    benchmark_xetla_vs_onednn(queue, context, device, {4, 50272/2, 2048}, perf_xetla, perf_onednn, verbose);
+    benchmark_xetla_vs_onednn(queue, context, device, {4, 50272/4, 2048}, perf_xetla, perf_onednn, verbose);
+    printf("\n*************\n");
+    print_onednn_xetla_table(perf_xetla, perf_onednn);
+    perf_xetla.clear(); perf_onednn.clear();
+    printf("\n\n\n\n");
+    /// /bloom-176b
 
     return (0);
 }
