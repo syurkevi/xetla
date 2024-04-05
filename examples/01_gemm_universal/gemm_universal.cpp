@@ -327,14 +327,20 @@ void gemm_universal_run_prealloc(uint32_t iter,
         FAIL();
     }
 
+    DT* cold_a_ptr = fill_device_ptr<data_type_b>(queue, context, device, matrix_m * matrix_k);
+    DT* cold_b_ptr = fill_device_ptr<data_type_b>(queue, context, device, matrix_k * matrix_n);
+    DT* cold_c_ptr = fill_device_ptr<data_type_b>(queue, context, device, matrix_m * matrix_n);
+
     //reset global benchmarking per problem //TODO: wtf
     done_warmup = false;
     allevents.clear();
     for (uint32_t i = 0; i < iter + warmup; i++) {
         if(cold_weights_cache) {
-            DT* cold_b_ptr = fill_device_ptr<data_type_b>(queue, context, device, matrix_k * matrix_n);
+            //DT* cold_b_ptr = fill_device_ptr<data_type_b>(queue, context, device, matrix_k * matrix_n);
+            queue.memcpy(A, cold_a_ptr, matrix_m*matrix_k*sizeof(DT)).wait();
             queue.memcpy(B, cold_b_ptr, matrix_k*matrix_n*sizeof(DT)).wait();
-            free(cold_b_ptr, context);
+            queue.memcpy(C, cold_c_ptr, matrix_m*matrix_n*sizeof(DT)).wait();
+            //free(cold_b_ptr, context);
         }
         queue.wait();
 
@@ -371,6 +377,10 @@ void gemm_universal_run_prealloc(uint32_t iter,
     for(auto &e: allevents) {
         prof.add_gpu_event(e);
     }
+
+    free(cold_a_ptr, context);
+    free(cold_b_ptr, context);
+    free(cold_c_ptr, context);
 
     if(check_correctness) {
         ASSERT_EQ(0,
@@ -466,18 +476,29 @@ void gemm_onednn_run_prealloc(uint32_t iter,
     long ops = 2 * static_cast<long>(matrix_m) * matrix_n * matrix_k;
     profiling_helper prof("gemm_onednn", ops, "gflops");
 
+    a_size = a_mem.get_desc().get_size();
+    b_size = b_mem.get_desc().get_size();
+    size_t c_size = c_mem.get_desc().get_size();
+    data_type_a* cold_a_ptr = fill_device_ptr<data_type_a>(queue, context, device, a_size / sizeof(data_type_a));
+    data_type_b* cold_b_ptr = fill_device_ptr<data_type_b>(queue, context, device, b_size / sizeof(data_type_b));
+    data_type_c* cold_c_ptr = fill_device_ptr<data_type_c>(queue, context, device, c_size / sizeof(data_type_c));
+
     bool supported_config = true;
     //reset global benchmarking per problem //TODO: wtf
     done_warmup = false;
     allevents.clear();
     for (uint32_t i = 0; i < iter + warmup; i++) {
         if(cold_weights_cache) {
+            uint8_t *a_ptr = (uint8_t *)a_mem.get_data_handle();
             uint8_t *b_ptr = (uint8_t *)b_mem.get_data_handle();
-            size_t b_size = b_mem.get_desc().get_size();
+            uint8_t *c_ptr = (uint8_t *)c_mem.get_data_handle();
+            //size_t b_size = b_mem.get_desc().get_size();
 
-            data_type_b* cold_b_ptr = fill_device_ptr<data_type_b>(queue, context, device, b_size / sizeof(data_type_b));
+            //data_type_b* cold_b_ptr = fill_device_ptr<data_type_b>(queue, context, device, b_size / sizeof(data_type_b));
+            queue.memcpy(a_ptr, cold_a_ptr, a_size).wait();
             queue.memcpy(b_ptr, cold_b_ptr, b_size).wait();
-            free(cold_b_ptr, context);
+            queue.memcpy(c_ptr, cold_c_ptr, c_size).wait();
+            //free(cold_b_ptr, context);
         }
         queue.wait();
         if (i >= warmup) {
@@ -496,6 +517,10 @@ void gemm_onednn_run_prealloc(uint32_t iter,
             // prof.add_gpu_event(gpu_event);
         }
     }
+
+    free(cold_a_ptr, context);
+    free(cold_b_ptr, context);
+    free(cold_c_ptr, context);
 
     //for(auto &e: allevents) {
         //prof.add_gpu_event(e);
@@ -559,6 +584,7 @@ void benchmark_xetla_vs_onednn(sycl::queue &queue, sycl::context &context, sycl:
             min_xetla_time, verbose);
     long ops = 2 * static_cast<long>(matrix_m) * matrix_n * matrix_k;
     long bytes = (static_cast<long>(matrix_m) * matrix_k + matrix_k * matrix_n + matrix_m * matrix_n) * sizeof(data_type_a);
+    //printf("bytes, %d\n", bytes);
     max_xetla_gflops = (double)ops / min_xetla_time / 1000000;
     max_xetla_bw = (double)bytes / 1000000 / min_xetla_time ;
     perf_xetla[mnk] = {min_xetla_time, max_xetla_gflops, max_xetla_bw};
